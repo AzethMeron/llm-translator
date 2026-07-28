@@ -2,9 +2,9 @@
 
 - **Status:** proposed
 - **Date:** 2026-07-23
-- **Engine commit this was written against:** `a8dc518` (general-translator, `__version__` 0.1.0)
+- **Engine commit this was written against:** `a8dc518` (llm-translator, `__version__` 0.1.0)
 - **Intended home:** `docs/upstream-feature-requests/00N-external-reference-translations-rag.md`
-  in the host project; filed to the general-translator maintainer.
+  in the host project; filed to the llm-translator maintainer.
 
 ## What we need
 

@@ -1,7 +1,7 @@
 # Plan — recovering a truncated JSON *envelope*, and giving the translate path its repair budget
 
 Filed by a downstream subtitle carrier using this library, as
-`general-translator-translate-path-json-truncation-unrepaired.md` (Bielik-11B via the
+`llm-translator-translate-path-json-truncation-unrepaired.md` (Bielik-11B via the
 `json_object` backend, EN→PL, 327 units across three real runs). This is the implementation plan
 for it.
 

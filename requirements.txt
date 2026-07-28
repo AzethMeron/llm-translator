@@ -1,4 +1,4 @@
-# Pinned Python environment for the general translator.
+# Pinned Python environment for llm-translator.
 #
 # Recreate with: tools/setup_python_env.sh
 #

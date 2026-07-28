@@ -1,11 +1,12 @@
-# general-translator
+# llm-translator
 
 A carrier-agnostic, model-agnostic translation engine for local language models, with a review
 harness that makes unattended translation trustworthy.
 
-This is the shared core lifted out of three projects that had each forked it — a game-text
-translator, a Flash-game translator, and a video-subtitle translator — generalised so one copy
-serves all of them and anything else. It is **only the translator**: the code that turns a
+This is the shared core lifted out of several projects that had each forked it — translating
+game text, and subtitles — generalised so one copy serves all of them and anything else. That
+history is why the carrier boundary is where it is: each fork differed only in how it got text
+in and out. It is **only the translator**: the code that turns a
 specific source into units and writes translations back (subtitle tracks, game files, documents)
 is a *carrier adapter*, and none of those live here. This repository is the part they had in
 common.

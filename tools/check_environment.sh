@@ -19,7 +19,7 @@ report() {
     [[ "$1" == "ok" ]] || status=1
 }
 
-echo "environment check for the general translator"
+echo "environment check for llm-translator"
 
 # Python interpreter and version.
 if command -v python3 >/dev/null 2>&1; then
