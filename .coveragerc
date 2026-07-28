@@ -1,0 +1,9 @@
+# Coverage configuration.
+#
+# exclude_also ADDS to coverage's default exclusions (which already include "pragma: no cover"),
+# for lines that cannot be executed in a test or are meaningless to: a defensive assertion that
+# fires only if an invariant is already broken, and the module-run entry guard.
+[report]
+exclude_also =
+    raise AssertionError
+    if __name__ == .__main__.:

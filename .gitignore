@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environment (created by tools/setup_python_env.sh)
+.venv/
+
+# Test and coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Local run state: catalogues, journals, glossaries produced by a run
+work/
+
+# Editor noise
+*.swp
+*Zone.Identifier
