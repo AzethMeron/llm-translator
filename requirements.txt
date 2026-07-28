@@ -1,0 +1,64 @@
+# Pinned Python environment for the general translator.
+#
+# Recreate with: tools/setup_python_env.sh
+#
+# The dependency footprint is deliberately tiny and split by package, because the two
+# packages are separately usable and their needs differ sharply:
+#
+#   transunit   stdlib only -- the intermediate format, terminology, placeholder
+#               convention, display width, and language detection. Nothing below is
+#               required to read a catalogue, group duplicates, or decide whether a
+#               translation is still in its source language. Enforced by
+#               tests/test_separation.py, which imports the whole contract with httpx
+#               unimportable.
+#   translator  needs one thing: an HTTP client to reach a local, OpenAI-compatible
+#               inference server (llama.cpp, ollama, vLLM, ...).
+#
+# Every package is pinned exactly, transitive ones included. Pinning only the direct
+# dependencies leaves the actual installed set free to drift, which is the drift that
+# makes a months-old run impossible to reproduce.
+
+# --- translator ---------------------------------------------------------------
+httpx==0.28.1
+# transitive
+anyio==4.14.2
+certifi==2026.6.17
+h11==0.16.0
+httpcore==1.0.9
+idna==3.18
+typing_extensions==4.16.0
+
+# --- embedding + hybrid retriever (OPTIONAL feature) --------------------------
+# Only translator.retrieval.embedding.EmbeddingRetriever (--embedding-url) and
+# translator.retrieval.hybrid.HybridRetriever (--hybrid, which composes it internally) need
+# this. It is imported lazily, so the core engine -- transunit and the default lexical
+# reference retriever -- never touches numpy, and a run that uses neither flag does not need
+# it installed. The reranking stage (--rerank-url, translator.retrieval.rerank) needs no new
+# dependency -- it is httpx, already pinned above. Pinned and installed by default so the
+# feature and its tests work out of the box; remove this line if you never use --embedding-url
+# or --hybrid.
+numpy==2.5.1
+
+# --- development and tests ----------------------------------------------------
+# The suite never reaches a server, so this is all it needs.
+pytest==8.3.4
+coverage==7.15.2
+# Property-based and fuzz testing (tests/property/). Test-only: nothing under src/ imports
+# it, so the shipped engine's footprint is unchanged. Justified over hand-rolled seeded
+# randomness by shrinking -- it reduces a failing case to a minimal counterexample, which is
+# what makes a fuzz finding actionable rather than a wall of random input. Runs with a fixed
+# derandomised profile in tests/property/conftest.py, so the suite stays reproducible.
+hypothesis==6.161.5
+# transitive
+iniconfig==2.3.0
+packaging==26.2
+pluggy==1.6.0
+sortedcontainers==2.4.0
+
+# --- linting and type checking ------------------------------------------------
+# Static analysis, run by tools/lint.sh. The ruleset is pinned in ruff.toml.
+ruff==0.15.22
+mypy==2.3.0
+# transitive (mypy)
+mypy_extensions==1.1.0
+typing_extensions==4.16.0

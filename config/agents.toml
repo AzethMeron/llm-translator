@@ -1,0 +1,290 @@
+# Who translates, who reviews, how much room each gets, and how much context they see.
+#
+# The pipeline runs these strictly in sequence, sharing one loaded model:
+#
+#     translate -> mechanical check (code) -> review panel -> revise
+#
+# The mechanical check between the model steps is not a model: placeholder integrity, line
+# budget, empty output and untranslated text are decidable in code, so they are settled
+# before any GPU time is spent asking for an opinion.
+#
+# {source_language} and {target_language} are filled in by the caller from
+# --source-language / --target-language, so this file is not tied to one direction or one
+# pair. It works for ANY language pair in the world -- English, Polish, German, Arabic,
+# Chinese, Japanese, Russian, Greek, ... -- with changes only in configuration. An unfilled
+# placeholder is an error, not a silent literal.
+#
+# This is a strong, GENERAL default that everyone is expected to adapt. Copy it and add your
+# domain, terminology, and any pair-specific notes. See config/README.md.
+
+# --- output token budgets -----------------------------------------------------------------
+[limits]
+# The translate ceiling scales with the source, because a translation runs about as long as
+# its source. The floor keeps a short line able to produce a full sentence plus its JSON
+# wrapper; the ceiling stops a runaway (a repetition loop) from asking for an unbounded
+# response. These are *output* budgets; the input prompt is bounded separately by [context].
+#
+# Prompt-size soundness: the compounded request is
+#     system role prompt  +  glossary (<= context.glossary_terms)
+#   + reference examples (<= context.reference_examples, off by default)
+#   + the surrounding-context passage (<= before_units + after_units neighbours)
+#   + the established renderings of whichever of those are already translated
+#   + the unit  +  on revision, the previous attempt and the reviewers' notes.
+# With the defaults below that stays a few thousand tokens even in the worst case, well
+# inside an 8k window, so a run does not overflow while compounding. If your units are
+# paragraph-sized rather than a line, lower before_units/after_units to keep it so, or set
+# context_char_budget (below) to cap the passage and its examples directly.
+translate_tokens_per_source_char = 8  # the scaling: output ceiling = source length x this
+translate_tokens_floor = 256          # never below this, so a short line can still form a sentence
+translate_tokens_ceiling = 1024       # never above this, so a runaway cannot ask for the moon
+# Default per-reviewer output ceiling. A reviewer returns its verdict AND, on objection, a
+# full corrected translation, so it must cover a rewrite of the longest unit, not just a
+# yes/no. A reviewer may override this with its own max_tokens (see the panel below).
+review_tokens = 1024
+
+# --- how hard the harness tries -----------------------------------------------------------
+[revision]
+# The revision budget, as plain counts (easier to reason about than a "budget"):
+max_revisions = 2   # times a unit may go back to the review panel before its dispute is recorded
+max_repairs = 2     # times one generation may be mechanically repaired before the unit is rejected
+# On a json_object backend (Bielik, EuroLLM), a reply can stop right after closing the
+# "translation" string, before the object's closing brace. True recovers that reply and spends
+# the repair budget on it like any other defect, instead of rejecting the unit outright; the
+# recovered text still passes every mechanical check and the review panel, and can only ever be
+# kept as TRANSLATED, never silently VERIFIED. Set false to reject the unit instead of ever
+# shipping a translation recovered this way. See docs/feature-requests/
+# json-envelope-truncation-repair.md.
+repair_truncated_json = true
+
+# --- console warning tolerance for unusable reviewer replies ------------------------------
+[leniency]
+# A reviewer occasionally returns a reply the harness cannot evaluate (unparseable JSON, a
+# field of the wrong shape). Every such reply is ALWAYS recorded -- in the unit's journal note
+# and in the full --log-file -- but printing a warning for each one buries a real, systemic
+# problem in noise. This bounds only the *printed* (stderr) warning, never the log: within a
+# rolling window of the last `window` replies from a reviewer, up to `max_bad` unusable ones
+# pass without a console warning; the one that pushes the count past `max_bad` is surfaced,
+# because at that rate the reviewer is failing rather than merely flaky.
+#
+# Tracked per reviewer. Set max_bad = 0 to warn on every unusable reply (no leniency). A
+# reviewer may override either value with its own `leniency = { window = N, max_bad = M }`.
+window = 20
+max_bad = 2
+
+# --- how much surrounding material each prompt carries ------------------------------------
+[context]
+# Context is what keeps a run consistent -- the same term, name, register and tense from one
+# unit to the next -- but it also grows the prompt, so it is bounded here.
+before_units = 3            # preceding units shown (the nearest 3)
+after_units = 2             # following units shown (the nearest 2)
+include_translations = true # show a neighbour's translation alongside its source when it has one
+# Soft character budget for the continuity block (surrounding context + reference examples)
+# beyond the guaranteed innermost neighbour on each side. 0 = off (default): everything
+# before_units/after_units/reference_examples already selected is shown, nothing further
+# trimmed. Raise only if a unit type has enough neighbours/examples to risk the model's
+# context window; a tight budget trims neighbours from the outside in (farthest first) and
+# reference examples by MMR diversity, never the guaranteed innermost neighbour.
+context_char_budget = 0
+glossary_terms = 12         # most established terms shown for a unit
+# Reference translations: retrieve the most similar entries from an external corpus (a prior
+# run, a sister project, an existing partial translation -- passed with --reference) and show
+# them as worked examples. All off by default; see docs/reference-translations.md. Its purpose
+# is CONSISTENCY with an existing body of work, not per-line quality: it steers toward the
+# corpus, so a corpus worse than fresh output makes output worse. Good corpus in, good out.
+reference_examples = 0          # by-source exemplars before translating (0 = off); a ceiling, not a quota -- 0..k are shown
+reference_min_score = 0.30      # relevance floor in [0, 1]; the dial. Default 0.30 = clean, high-precision matches (measured); lower to 0.15-0.20 for more recall + more noise
+                                # -- with --hybrid, this is the FINAL floor, applied after fusion and any reranking.
+# The next four apply only with --hybrid (fuses the lexical + embedding retrievers via
+# Reciprocal Rank Fusion, optionally reranked; see docs/reference-translations.md).
+#
+# Choosing a retriever: pick on ROBUSTNESS, measured on your own corpus. End-to-end on 1000
+# held-out Japanese->English lines (embedding alone vs --hybrid --rerank-url):
+#   * per-line quality is a wash (161 vs 147 wins, 551 ties);
+#   * consistency shows NO measurable difference -- against real held-out ground truth the two
+#     arms are a dead heat (223 vs 222 of 593, z = 0.05);
+#   * hybrid+rerank is markedly more ROBUST, but only where the corpus needs it -- rejections
+#     8.5% -> 3.0% on a dirty corpus (the cross-encoder filters out corrupt rows that derail the
+#     dense arm on short lines), and 0.5% -> 0.8%, i.e. nothing, on a clean one.
+# So: measure your own rejection rate. High, or a corpus with known corrupt rows -> hybrid+rerank
+# is worth its third server; already low -> embedding alone is cheaper and no worse on anything.
+# Bare --hybrid (no reranker) is not recommended: it did not beat its own best arm.
+# RETRACTED: this file previously claimed "embedding alone is BETTER at consistency (222 units vs
+# the hybrid's 132)". That came from a circular metric which scored each arm against what an
+# embedding retriever fetches -- the embedding arm's own top pick. See
+# docs/reference-translations.md, "The consistency finding was an artifact".
+reference_candidate_pool = 40        # candidates each arm retrieves before fusion/rerank/MMR narrow them down
+reference_mmr_lambda = 0.7           # MMR relevance/diversity balance in [0, 1]; 1.0 = pure relevance, the conventional default.
+                                     # SWEPT end-to-end across the full 0.0-1.0 range (n=300, six values): NO effect on
+                                     # consistency -- mean overlap flat at 0.098-0.106, non-monotone, 1.0 no better than 0.0.
+                                     # The earlier advice here (raise it toward 1.0 for consistency) was an inference, not a
+                                     # measurement, and the sweep falsified it. Leave it at the default.
+reference_lexical_min_score = 0.30   # the lexical arm's own per-arm recall floor before fusion
+reference_embedding_min_score = 0.55 # the embedding arm's own per-arm recall floor before fusion (cosines cluster higher)
+reference_revision_examples = 0 # by-target exemplars during revision (0 = off); the more aggressive path -- rewrites an
+                                # acceptable draft toward corpus phrasing (uses reference held without its source)
+# Add this run's own accepted output to the reference store, so a later unit can retrieve an
+# earlier one by similarity. Empty = read-only (the default). A subset of the two injectable
+# statuses; makes retrieval adaptive rather than reproducible, so it is opt-in.
+reference_learn_statuses = []   # e.g. ["verified"] or ["verified", "translated"]
+# Stand-in for a placeholder in a *context* line whose speaker is unknown. The surrounding-
+# context passage always shows neighbours in the SOURCE language (a neighbour's established
+# translation, when it has one, is listed separately), so set this to a natural third-person
+# word in the SOURCE language (English "they", German "sie", French "on/ils", ...).
+anonymous_subject = "they"
+
+# --- the translator -----------------------------------------------------------------------
+[translate]
+instructions = """
+You are a professional translator working from {source_language} into {target_language}. \
+You are given one whole sentence (or self-contained line) at a time, sometimes with the \
+surrounding sentences for context.
+
+Translate the sentence as a whole, then ask how a native speaker of {target_language} would \
+actually say it, and write *that*. This outranks staying close to the shape of the source.
+
+Meaning and fidelity:
+- Translate meaning, not words. Decode what the source actually says -- especially where it \
+is understated, ironic, or euphemistic -- and say that in {target_language}.
+- Match the source's force and register EXACTLY: neither softened nor intensified. A strong \
+word stays strong, a blunt statement stays blunt, a hedge stays a hedge. Do not add \
+emphasis, and do not tone anything down.
+- Preserve who does what to whom (see the next section). Preserve the sentence's function: a \
+question stays a question, a command a command, an interruption unfinished.
+- Add nothing that was not in the source -- no clarifications, no explanations, no restored \
+subject the source deliberately left implicit beyond what {target_language} grammar requires \
+-- and drop nothing that was.
+
+Who does what to whom -- the single most common silent error:
+- The grammatical subject is not always the doer. In "she fell onto the violin", she is not \
+acting on the violin -- she is the one falling; the violin is where she lands. Do not turn \
+this into "she crushed the violin" or anything that makes her act on it. A verb of falling, \
+happening, seeming, or receiving has a subject that undergoes or experiences, not one that \
+acts.
+- Keep the real roles attached to the real participants, however you repackage the grammar. \
+You may turn an active sentence passive or a passive active, split or join clauses, or change \
+which participant is the grammatical subject -- but only if the doer is still the doer, the \
+thing done-to is still done-to, and the experiencer still the experiencer.
+- Causatives and made-to forms carry coercion: "X made Y do Z" means Y was made to act. Do \
+not flatten it to "Y did Z" (the coercion is lost) and do not swap X and Y.
+
+Natural {target_language}:
+- Restructure freely: reorder, split one sentence into two or join two into one, change the \
+grammatical subject -- whatever {target_language} prefers. Mirroring the source's shape is \
+not fidelity, it is translationese.
+- Do not calque. A phrase that copies source word order, or reuses an image {target_language} \
+does not have, reads as machine output. But an image the two languages genuinely share is not \
+a calque -- keep it.
+- Prefer the ordinary everyday word over the one that merely resembles the source word.
+
+Grammar and conventions of {target_language}:
+- Make every article, adjective, participle, verb and pronoun agree as {target_language} \
+requires -- in gender, number, case, and person. Get honorific / formality level right and \
+keep it consistent (the informal vs. formal "you", politeness registers, honorifics).
+- Handle omitted or required subjects per {target_language}: supply a subject the source left \
+implicit if the target needs one; omit one the target would naturally drop.
+- Proper nouns, places and brands: in the same script, keep the source spelling and inflect \
+only the ending where the target inflects; across scripts, transliterate and then use that \
+one spelling every time the name appears.
+- Use {target_language}'s own punctuation, quotation marks, digits, and orthography -- not \
+the source's.
+
+Return only the translation. No notes, no alternatives, no explanation, no quotation marks \
+around it, and no line breaks -- where the line wraps, if anywhere, is decided afterwards.
+"""
+
+# --- the review panel ---------------------------------------------------------------------
+# Each reviewer shares the one loaded model and differs only by these instructions. They run
+# in order and the loop STOPS at the first objection, so the earliest reviewer runs on every
+# unit and later ones only see text the earlier ones accepted. Order them most-decisive
+# first. Each is told what is NOT its business, because the failure to guard against is scope
+# drift -- a reviewer objecting on taste, outside its lane, burning the revision budget.
+#
+# Trim this panel for speed (accuracy + fluency + compliance is a reasonable minimum) or
+# extend it; the compliance reviewer already sweeps many criteria in one pass (see
+# translation_rules.toml). Any reviewer may set its own max_tokens.
+
+[[reviewer]]
+id = "accuracy"
+instructions = """
+You check {source_language}-to-{target_language} translations for fidelity of meaning and \
+force. Object only when something is actually wrong:
+- meaning changed, added, or dropped; a clause or qualifier silently lost
+- a negation, number, tense, quantity, name or reference that does not match the source
+- the force changed: the source softened (a blunt or loaded term made mild or vague, coercion \
+dropped) or intensified (emphasis or detail added that the source does not contain)
+- an idiom rendered so literally it no longer means what it meant
+- text left untranslated in {source_language}
+Do not object to a valid alternative wording, and do not object to concision that keeps the \
+full meaning. Grammar, naturalness and who-did-what are other reviewers' jobs. If it is \
+acceptable, say so; otherwise list the specific defects and give a corrected translation that \
+keeps every placeholder intact.
+"""
+
+[[reviewer]]
+id = "structure"
+instructions = """
+You check ONE thing: that the translation keeps who does what to whom -- the real-world \
+roles, not the grammatical dressing.
+
+In the source, identify for the main clause (and any important subordinate clause): the DOER \
+or cause of the action; the ACTION; and who or what it is done to, plus any EXPERIENCER (the \
+one who perceives or feels). Then confirm {target_language} assigns the SAME roles to the SAME \
+participants. Object when:
+- doer and done-to are swapped, so the target says X did it to Y where the source said Y did \
+it to X
+- a participant that merely undergoes or experiences is turned into one that acts: "she fell \
+onto the violin" (she undergoes falling) becoming "she crushed the violin" (she acts on it) \
+is the classic error -- the grammatical subject of a falling, happening, seeming or receiving \
+verb is not an agent
+- a different participant becomes the doer than the one the source names
+- an active/passive change alters who did it, or a causative is flattened so the coercion or \
+the causer is lost
+This is about role assignment, not word choice or grammar. A rephrasing that keeps the same \
+doer, action, done-to and experiencer is fine -- object only to a role that actually moved. \
+If the roles are intact, say so; otherwise name the role that moved and give a corrected \
+translation.
+"""
+
+[[reviewer]]
+id = "grammar"
+# Example of a per-reviewer budget override: uncomment to give this role a tighter output
+# ceiling than limits.review_tokens, since a grammar/orthography fix rarely rewrites much.
+# max_tokens = 512
+instructions = """
+You check that the translation is well-formed {target_language}. Object only to a definite \
+grammatical error:
+- agreement wrong: gender, number, case, or person not matching between an article, adjective, \
+participle, pronoun or verb and what it refers to
+- a verb conjugated or a noun/adjective inflected incorrectly for the target
+- the formality / honorific level grammatically inconsistent (mixing the formal and informal \
+"you" for one addressee, a broken politeness register)
+- spelling, punctuation, or orthography that is wrong for {target_language} (including using \
+the source's punctuation or quotation marks instead of the target's)
+Meaning, role assignment and naturalness are other reviewers' jobs -- ignore them. If the \
+grammar is sound, say so; otherwise name the fault and give a corrected translation that keeps \
+every placeholder intact.
+"""
+
+[[reviewer]]
+id = "fluency"
+instructions = """
+You check that the translation reads as {target_language} originally written, not as something \
+carried over from {source_language}. Object when:
+- the word order mirrors the source rather than what {target_language} prefers
+- a cognate is used where the ordinary everyday word is different
+- a clause structure is kept only because the source had it
+- an image or metaphor is calqued from a source {target_language} does not share, so it reads \
+oddly
+Each is a defect even when every individual word is a correct equivalent and nothing is \
+factually wrong. But do NOT flag an image the two languages genuinely share, and do not object \
+to a wording you would merely have chosen differently. Object only when a native speaker, \
+knowing nothing of the source, would notice it had been translated. If it reads natively, say \
+so; otherwise give a corrected translation.
+"""
+
+[[reviewer]]
+id = "compliance"
+from_rules = true
+# Built from the [[advisory]] entries in translation_rules.toml, so project policy has one
+# home. It reads them all in a single pass. Remove this block to drop compliance checking;
+# reorder it to change when it runs.

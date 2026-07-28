@@ -1,0 +1,74 @@
+# Lexical fingerprints for the untranslated-echo check, for pairs that SHARE a script.
+#
+# The pipeline catches one specific failure: a model handing back its input instead of
+# translating. How it catches it depends on the pair:
+#
+#   * SAME script (English <-> Polish <-> German, all Latin): script tells you nothing, so
+#     the evidence is lexical -- the function words each language uses constantly and the
+#     other does not, plus each language's distinctive letters. Add a profile here per
+#     language, and run with --languages pointing at this file.
+#
+#   * DIFFERENT scripts (English <-> Arabic / Chinese / Japanese / Russian / Greek / Hebrew /
+#     Korean / ...): you need NO profile here at all. The source's own letters surviving into
+#     the target are the evidence, and that is decided by a script detector. Run with
+#     --source-script NAME instead (e.g. --source-script arabic|han|japanese|cyrillic|greek).
+#     `python -m translator.cli --help` lists the script names.
+#
+# Loaded by transunit.language.load_profiles. Adding a same-script language is an edit to
+# this file, not to any code.
+#
+# Choosing stopwords: pick closed-class words (articles, prepositions, pronouns, conjunctions,
+# auxiliaries) that are frequent in this language and rare in the ones it is compared against.
+# A word common to two of your languages scores for whichever list holds it, so keep the lists
+# as disjoint as you can. Both letter cases of a distinctive character are listed because the
+# detector lowercases before matching.
+
+[languages.en]
+name = "English"
+stopwords = [
+    "the", "a", "an", "and", "or", "but", "if", "of", "in", "on", "at", "by",
+    "for", "with", "from", "as", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would", "can",
+    "could", "should", "it", "its", "this", "that", "these", "those", "he",
+    "she", "they", "them", "his", "her", "their", "you", "your", "we", "our",
+    "there", "here", "what", "when", "where", "which", "who", "how", "not",
+    "than", "then", "some", "any", "all", "just", "about", "into", "over",
+]
+# English has no letters outside the basic Latin alphabet, so there is no orthographic
+# evidence to offer -- the stopwords carry this profile alone.
+distinctive_characters = ""
+
+[languages.pl]
+name = "Polish"
+stopwords = [
+    "nie", "jest", "sie", "się", "że", "ze", "jak", "ale", "czy", "tak", "tym",
+    "tego", "jego", "jej", "ich", "ktory", "który", "która", "które", "gdy",
+    "gdzie", "kiedy", "bo", "bardzo", "juz", "już", "tylko", "jeszcze", "byl",
+    "był", "była", "było", "byli", "sa", "są", "ma", "mam", "masz", "moze",
+    "może", "trzeba", "przez", "dla", "przed", "pod", "nad", "przy", "bez",
+    "oraz", "albo", "wiec", "więc", "tez", "też", "nam", "nas", "wam", "was",
+    "mnie", "ciebie", "sobie", "swoje", "swoja", "swoją", "wszystko", "cos",
+    "coś", "ktos", "ktoś", "nic", "nikt", "kilka", "wiele", "bardziej",
+]
+# The nine Polish letters absent from English (and from German). A single ł or ż effectively
+# settles the question, which is why the score treats distinctive letters as independent of the
+# stopword rate rather than multiplying the two.
+distinctive_characters = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"
+
+[languages.de]
+name = "German"
+# A third Latin-script example, so the same file distinguishes English, Polish and German. Its
+# stopwords are disjoint from the two above; where a form would collide (English "in", "so"),
+# it is left out rather than scored for both.
+stopwords = [
+    "der", "die", "das", "und", "oder", "aber", "wenn", "weil", "dass", "als",
+    "auch", "nicht", "ein", "eine", "einen", "einem", "einer", "ist", "sind",
+    "war", "waren", "wird", "werden", "wurde", "hat", "haben", "hatte", "kann",
+    "könnte", "soll", "muss", "mit", "von", "zu", "auf", "für", "aus", "bei",
+    "nach", "über", "unter", "vor", "durch", "gegen", "ohne", "um", "ich",
+    "du", "er", "sie", "wir", "ihr", "mich", "dich", "sich", "mein", "dein",
+    "sein", "kein", "schon", "noch", "sehr", "hier", "dort", "immer",
+]
+# ß is unique to German; the umlauts also appear in some other languages but not in English or
+# Polish, so against those two they are strong evidence here.
+distinctive_characters = "äöüßÄÖÜ"

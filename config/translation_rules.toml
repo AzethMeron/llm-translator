@@ -1,0 +1,158 @@
+# What counts as an acceptable translation.
+#
+# Two kinds of rule, deliberately separated:
+#
+#   mechanical  decided by code, in translator.rules.check_mechanical -- cheap,
+#               deterministic, settled before any GPU time is spent
+#   advisory    prose criteria handed to the "compliance" reviewer, because judging them
+#               is what a language model is for
+#
+# Policy lives here, as data, so changing what the pipeline enforces does not mean editing
+# Python. This is a strong, GENERAL default for ANY language pair; copy it and tighten it for
+# your project and pair (see config/README.md).
+#
+# NOTE: unlike agents.toml, this file has NO {source_language}/{target_language} substitution.
+# Write "the target language" / "the source", not a placeholder.
+
+[limits]
+# Project-wide soft guideline on line width, warned about but not blocking. The blocking
+# per-unit budget, where a carrier has one, is set on the unit itself (max_columns) and comes
+# from the medium (a subtitle's reading time, a fixed message box's width). Width is measured
+# in half-width columns, so a full-width CJK glyph counts as two -- which matters for Chinese,
+# Japanese and Korean output.
+max_line_columns = 110
+
+# How far a translation may exceed a unit's *hard* budget and still be kept. The budget is
+# reading time or box space, not an exact cliff: a few per cent over is a marginal defect,
+# while a rejected unit is not rendered at all and the untranslated source is shown instead.
+max_columns_tolerance = 0.12
+
+# Whether a translation may still be in the source language. Never enable this: it switches
+# off the echo check. (That check only runs when the caller supplies a detector -- lexical
+# for a same-script pair, or a script detector for a different-script pair; without one it is
+# skipped rather than reported as passed.)
+allow_untranslated = false
+
+# A non-empty source must produce a non-empty translation.
+require_nonempty = true
+
+[glossary]
+# Terminology consistency is a warning rather than an error by default. Inflected languages
+# make exact-form matching unreliable -- a term appears in several declined forms -- so a
+# missing literal match is weak evidence. Set to "error" only if your terminology is not
+# inflected and must appear verbatim.
+severity = "warning"
+
+[style]
+# Short directives added to every role's system prompt. Kept few and general; anything long
+# or nuanced belongs in an [[advisory]] criterion, where a reviewer judges it. No language
+# placeholders here (this file is not substituted).
+directives = [
+    "Render meaning, not words: the result reads as natural writing in the target language, never as a transposed source.",
+    "Match the source's force and register exactly -- neither softened nor intensified.",
+    "Preserve who does what to whom: do not swap the doer and the thing done to, and do not turn something that merely happens to a participant into an action they perform.",
+    "Use the target language's own punctuation, quotation marks, digits and orthography.",
+    "Add nothing that was not in the source, drop nothing that was, and keep each proper noun spelled one way throughout.",
+]
+
+# --- forbidden patterns -------------------------------------------------------------------
+# Regexes rejected outright. These are model failure modes, not language rules: text that is
+# *about* the translation rather than *being* it. The wording patterns target the English
+# meta-text small models leak even on non-English jobs; if your model leaks in the target
+# language, add the target-language equivalents. The placeholder pattern is language-agnostic.
+
+[[forbidden]]
+pattern = "(?i)^(here is|here's|sure[,!]|certainly[,!]|of course[,!]|as requested)"
+reason = "conversational preamble; the response must be the translation alone"
+
+[[forbidden]]
+pattern = "(?i)\\b(as an ai|i cannot|i can't translate|i'm unable to|i apologize|i'm sorry, but)\\b"
+reason = "model commentary or a refusal leaked into the output"
+
+[[forbidden]]
+pattern = "(?i)^(translation|translated|output|result)\\s*:"
+reason = "a label prefixed to the translation"
+
+[[forbidden]]
+pattern = "\\[(note|translator|tl note|sic)[^\\]]*\\]"
+reason = "translator's note; the output has no room for annotation"
+
+[[forbidden]]
+pattern = "(?i)\\((literally|lit\\.|or:|alternatively)[^)]*\\)"
+reason = "an alternative rendering offered alongside the translation"
+
+# A placeholder wraps a piece of the source; two placeholders left touching, other than at the
+# very end of the line, usually means text that belonged between them was dropped.
+[[forbidden]]
+pattern = "\\[\\[\\s*\\d+\\s*\\]\\]\\s*\\[\\[\\s*\\d+\\s*\\]\\](?!\\s*$)"
+reason = "placeholders collapsed together, which usually means text between them was dropped"
+
+# --- advisory criteria --------------------------------------------------------------------
+# Handed verbatim to the compliance reviewer, which judges them all in one pass. Judgement
+# calls, so they are prose. These complement the dedicated reviewers (accuracy, structure,
+# grammar, fluency) rather than repeating them.
+
+[[advisory]]
+id = "register"
+description = """
+The translation keeps the source's register and level of politeness. Casual stays casual, \
+formal stays formal, rude stays rude. Where the target language marks formality that the \
+source does not spell out -- the informal versus formal "you" (tu/vous, du/Sie, ты/вы), \
+honorifics, humble and polite forms -- the level chosen fits the relationship and situation \
+and is consistent within the exchange. Flattening a distinctive voice into neutral standard \
+prose is a defect.
+"""
+
+[[advisory]]
+id = "voice_consistency"
+description = """
+Where a speaker is named, the line sounds like that speaker and is consistent with how they \
+have been written elsewhere. A character's idiom, bluntness, formality or verbal tics survive \
+the translation.
+"""
+
+[[advisory]]
+id = "continuity"
+description = """
+Where surrounding lines are shown, the translation is consistent with them: the same term for \
+the same thing, continuous pronouns and tense, and a sentence split across units that reads as \
+one sentence. The line follows sensibly from what precedes it and leads into what follows.
+"""
+
+[[advisory]]
+id = "proper_nouns"
+description = """
+Names, places and brands are spelled one way throughout. In the same script as the source, the \
+spelling is kept and only the ending inflected where the target language inflects. Across \
+scripts, the name is transliterated into the target script and then spelled that same way every \
+time it appears -- never re-transliterated differently, never partly translated. A reader must \
+be able to tell it is the same referent each time.
+"""
+
+[[advisory]]
+id = "pronouns_and_reference"
+description = """
+Every pronoun refers unambiguously to the right participant and agrees with it in gender and \
+number as the target language requires. Subjects the source omits are supplied where the target \
+grammar needs them, and subjects the target would naturally drop are not forced in. Gendered \
+agreement follows the referent's gender, not the source word's.
+"""
+
+[[advisory]]
+id = "figurative_language"
+description = """
+Figurative, understated or euphemistic source is rendered for what it means, not for the image \
+it uses -- where the target language does not share that image. A metaphor forced across into a \
+language with no such figure, so the picture survives but the point is lost, is a defect. But an \
+image the two languages genuinely share is not a calque and must not be flagged as one. Object \
+only when the rendering would actually puzzle a native speaker.
+"""
+
+[[advisory]]
+id = "localization"
+description = """
+Numbers, dates, times, measurements and punctuation follow the target locale's conventions -- \
+decimal and thousands separators, date order, the target's quotation marks and sentence \
+punctuation -- WITHOUT changing or adding information. Converting a format is expected; \
+converting a value, or inventing a unit the source did not give, is not.
+"""

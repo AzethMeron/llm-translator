@@ -1,0 +1,31 @@
+# Lint configuration, pinned so `ruff check` means the same thing for everyone.
+#
+# The ruleset is correctness-focused: pyflakes (F), bugbear (B), blind-except (BLE),
+# comprehensions (C4), simplify (SIM), returns (RET), perf (PERF), misc (PIE), pyupgrade
+# (UP), unused arguments (ARG), and ruff's own checks (RUF). Run it with tools/lint.sh.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "B", "BLE", "C4", "SIM", "RET", "PERF", "PIE", "UP", "RUF", "ARG"]
+ignore = [
+    # This is a translation library: source and test strings are full of non-ASCII by design,
+    # so "ambiguous unicode character" is noise, not a finding.
+    "RUF001", "RUF002", "RUF003",
+    # `__all__` is grouped by concern with explaining comments, not sorted alphabetically.
+    "RUF022",
+    # `.encode("utf-8")` is spelled out on purpose -- explicit over implicit, per the project
+    # rules -- rather than relying on the default encoding.
+    "UP012",
+    # A readable conditional append is clearer here than a comprehension folded into extend.
+    "PERF401",
+    # `class Status(str, Enum)` is a deliberate idiom (JSON value IS the member); switching to
+    # StrEnum changes str()/format behaviour on a core type for no correctness gain.
+    "UP042",
+]
+
+[lint.per-file-ignores]
+# Tests use unused fixture arguments (request, monkeypatch), kwargs-style dict() for
+# readability, and throwaway unpacking; none of that is a defect in a test.
+"tests/**" = ["ARG", "C408", "RUF059", "B011", "SIM117"]
